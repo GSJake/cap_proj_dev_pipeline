@@ -14,6 +14,8 @@ from io import StringIO
 import logging
 from datetime import datetime
 from databricks.sdk.runtime import *
+import zipfile
+from io import BytesIO
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +35,7 @@ SFTP_CONFIG = {
 
 def fetch_and_save_sftp_file(file_path, dbfs_temp_path):
     """
-    Connects to SFTP, fetches a file, and saves it to a temporary DBFS path.
+    Connects to SFTP, fetches a ZIP file, extracts the CSV, and saves it to a temporary DBFS path.
     This is a robust, one-time operation per pipeline run.
     """
     ssh = None
@@ -54,14 +56,33 @@ def fetch_and_save_sftp_file(file_path, dbfs_temp_path):
         sftp = ssh.open_sftp()
         logger.info(f"Connected to SFTP server: {SFTP_CONFIG['host']}")
 
-        # Read the remote file's content
-        with sftp.file(file_path, 'r') as remote_file:
-            content = remote_file.read()
+        # Read the remote ZIP file's content as binary
+        with sftp.file(file_path, 'rb') as remote_file:
+            zip_content = remote_file.read()
 
-        # Write the content to a temporary location on DBFS
+        # Extract CSV from ZIP file
+        with zipfile.ZipFile(BytesIO(zip_content)) as zip_file:
+            # Get list of files in the ZIP
+            file_list = zip_file.namelist()
+            logger.info(f"Files in ZIP: {file_list}")
+            
+            # Find the CSV file (assuming there's only one CSV or we want the first one)
+            csv_file = None
+            for filename in file_list:
+                if filename.lower().endswith('.csv'):
+                    csv_file = filename
+                    break
+            
+            if csv_file is None:
+                raise ValueError("No CSV file found in the ZIP archive")
+            
+            # Extract and read the CSV content
+            csv_content = zip_file.read(csv_file).decode('utf-8')
+
+        # Write the CSV content to a temporary location on DBFS
         spark = SparkSession.getActiveSession()
-        dbutils.fs.put(dbfs_temp_path, content.decode('utf-8'), overwrite=True)
-        logger.info(f"Successfully saved SFTP file to DBFS at {dbfs_temp_path}")
+        dbutils.fs.put(dbfs_temp_path, csv_content, overwrite=True)
+        logger.info(f"Successfully extracted CSV from ZIP and saved to DBFS at {dbfs_temp_path}")
 
     except Exception as e:
         logger.error(f"Failed to fetch data from SFTP: {str(e)}")
