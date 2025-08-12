@@ -88,8 +88,9 @@ def raw_cap_projects():
     Bronze table: Raw data from SFTP with minimal processing.
     This function reads the file from DBFS after it's been downloaded.
     """
-    # The actual file path on the SFTP server
-    file_path = "Capital Projects Analyst Report.csv"
+    # The actual file path on the SFTP server - dynamically generated with current date
+    current_date = datetime.now().strftime('%Y%m%d')
+    file_path = f"CapitalProjects__{current_date}.csv.zip"
 
     # Create a unique temporary path on DBFS to store the fetched file
     dbfs_temp_path = f"/FileStore/sftp_temp/{file_path.replace('/', '_')}-{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
